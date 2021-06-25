@@ -316,11 +316,11 @@ void LocationDetect::ProcessCalibration(cv::Mat src) {
   cv::imshow(display_name, dst);
 }
 
-// 模型加载及初始化过程
-void LocationDetect::CreatModule(){
-  torch::DeviceType device_type = at::KCPU;
-  torch::jit::script::Module module = torch::jit::load("../cpu.pth", device_type);
-}
+// // 模型加载及初始化过程
+// void LocationDetect::CreatModule(){
+//   torch::DeviceType device_type = at::KCPU;
+//   torch::jit::script::Module module = torch::jit::load("../cpu.pth", device_type);
+// }
 
 // 图像预处理过程
 void LocationDetect::Mat2tensor(cv::Mat &src, torch::Tensor &output){
@@ -339,18 +339,60 @@ void LocationDetect::Mat2tensor(cv::Mat &src, torch::Tensor &output){
   output = img_tensor.clone();
 }
 
+
 // 分类检测库位状态
 const std::vector<CeilState> LocationDetect::MobilenetV3Detection(){
+  // 加载模型
+  torch::DeviceType device_type = at::KCPU;
+  torch::jit::script::Module module = torch::jit::load("../cpu.pth", device_type);
+  module.eval()
+
+
   std::vector<CeilState> state;
   // 得到想要的库区所有的库位数量
   int n = section_.at(current_url_).ceil_number;
   if(n < 1){
-    std::cout << "Class extract error: no corrent ceil_number" << std::endl;
+    std::cout << "Class extract error: this url has no corrent ceil_number" << std::endl;
+    return state;
   }
 
   for(int i = 0; i < n; i++){
     // 获取当前库位的实时图像
     cv::Mat ceil_img = section_.at(current_url_).foreground_ceil.at(i).clone();
+    if(ceil_img.data == nullptr){
+      std::cout << "foreground data empty!" << std::endl;
+      state.emplace_back(CeilState::UNKNOWN);
+      continue;
+    }
+
+    // 进行数据转换
+    torch::Tensor subTensor;
+    Mat2tensor(ceil_img, subTensor);
+
+    //计时并执行推理得到label
+    // std::chrono::time_point<std::chrono::steady_clock> start =  std::chrono::steady_clock::now();
+    
+    std::vector<torch::jit::IValue> inputs;
+    inputs.push_back(ceil_img.to(device_type));
+    
+    torch::Tensor output = module.forward(std::move(inputs)).toTensor();
+    // std::cout << output << std::endl;
+    auto max_result = output.max(1, true);
+    auto max_index = std::get<1>(max_result).item<int>();
+    // std::cout << max_index << std::endl;
+    if(max_index == 0){
+      state.emplace_back(CeilState::FREE);
+      continue;
+    }
+    if(max_index == 1){
+      state.emplace_back(CeilState::BUSY);
+      continue;
+    }
+
+    // std::chrono::time_point<std::chrono::steady_clock> end =  std::chrono::steady_clock::now();
+    // std::chrono::duration<double, std::milli> fp_ms = end - start;
+    // std::cout << "cpu运行时间: " << fp_ms.count() << "ms" << std::endl;
+
   }
 }
 
