@@ -316,6 +316,12 @@ void LocationDetect::ProcessCalibration(cv::Mat src) {
   cv::imshow(display_name, dst);
 }
 
+// 模型加载及初始化过程
+void LocationDetect::CreatModule(){
+  torch::DeviceType device_type = at::KCPU;
+  torch::jit::script::Module module = torch::jit::load("../cpu.pth", device_type);
+}
+
 // 图像预处理过程
 void LocationDetect::Mat2tensor(cv::Mat &src, torch::Tensor &output){
   cv::resize(src, src, {224, 224});
